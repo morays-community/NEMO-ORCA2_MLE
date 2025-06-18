@@ -28,8 +28,7 @@ Internal and external computed fluxes are written in an output file with the NEM
 - Eophis version : [v1.0.1](https://github.com/meom-group/eophis/releases/tag/v1.0.1)
 - **BBZ24** dependencies:
   ```bash
-    git submodule update --init --recursive
-    cd eORCA025_MLE.BBZ24/INFERENCES/NEMO_MLE
+    cd ORCA2.BBZ24/INFERENCES/BBZ24_MLE/
     pip install -e .  
   ```
 
