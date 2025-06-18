@@ -36,6 +36,11 @@ Internal and external computed fluxes are written in an output file with the NEM
 
 - Production Manager: none, use submission script `job.ksh` in `RUN`
 
+- Input files: 
+  ```bash
+    wget "https://gws-access.jasmin.ac.uk/public/nemo/sette_inputs/r5.0.0/ORCA2_ICE_v5.0.0.tar.gz"
+  ```
+
 ### Post-Process
 
 - No post-process libraries
