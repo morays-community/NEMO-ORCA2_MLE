@@ -7,6 +7,9 @@
 Purpose of this experiment is to compute the vertical buoyancy fluxes (VBF) induced by different submesoscale Mixed Layer Eddies (MLE) parameterisation in the NEMO [ORCA2](https://sites.nemo-ocean.io/user-guide/cfgs.html#orca2-ice-pisces) reference config.
 Internal and external computed fluxes are written in an output file with the NEMO output system (XIOS).
 
+> _**Objective is also to showcase hybrid Ocean/ML with NEMO5**_
+
+
 #### Variations
 - **BBZ24** : Velocity streamfunctions computed by inverting VBF infered with pre-trained [Bodner, Balwada and Zanna (2024)]() CNN
 
