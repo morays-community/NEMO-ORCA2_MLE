@@ -1,6 +1,6 @@
 # ORCA2 MLE
 
-`DOI XXX.XXXX`
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.15699154.svg)](https://doi.org/10.5281/zenodo.15699154)
 
 ## Context and Motivation
 
