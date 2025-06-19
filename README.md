@@ -43,6 +43,6 @@ Internal and external computed fluxes are written in an output file with the NEM
 
 - No post-process libraries, use direct NEMO outputs
 
-- `ORCA2_mldr10_1.nc` file in `POSTPROCESS` contains ORCA2 MLD results without MLE
+- `ORCA2_MLD.nc` file in `POSTPROCESS` contains ORCA2 MLD results without MLE
   
 - Plotting : Python script `plot_res.py` in `POSTPROCESS`
