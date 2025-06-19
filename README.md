@@ -1,6 +1,6 @@
 # ORCA2 MLE
 
-[![DOI](https://zenodo.org/badge/763681074.svg)](https://doi.org/10.5281/zenodo.13851909)
+`DOI XXX.XXXX`
 
 ## Context and Motivation
 
@@ -10,8 +10,6 @@ Internal and external computed fluxes are written in an output file with the NEM
 #### Variations
 - **BBZ24** : Velocity streamfunctions computed by inverting VBF infered with pre-trained [Bodner, Balwada and Zanna (2024)]() CNN
 
-
-<img width="695" alt="MLE_EXP" src="https://github.com/morays-community/NEMO-MLE_Fluxes/assets/138531178/084171b2-7f5d-407b-ad6c-92551f3bbcb2">
 
 ## Experiments Requirements
 
@@ -43,6 +41,8 @@ Internal and external computed fluxes are written in an output file with the NEM
 
 ### Post-Process
 
-- No post-process libraries
+- No post-process libraries, use direct NEMO outputs
+
+- `ORCA2_mldr10_1.nc` file in `POSTPROCESS` contains ORCA2 MLD results without MLE
   
 - Plotting : Python script `plot_res.py` in `POSTPROCESS`
