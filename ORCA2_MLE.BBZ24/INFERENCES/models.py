@@ -93,7 +93,10 @@ def vert_buoyancy_flux_CNN(*inputs, tmask):
         w_b = np.squeeze( w_b )
         w_b = w_b[ : , : , np.newaxis ]
         w_b = ( w_b * tmask * dev ) + mean
-        w_b = np.nan_to_num(w_b, nan=0.0) 
+
+        w_b = np.nan_to_num(w_b, nan=mean)
+        w_b = np.where( w_b >  (mean+dev) ,mean+dev , w_b)
+        w_b = np.where( w_b <  (mean-dev) , (mean-dev), w_b)
 
         return w_b
 
