@@ -25,8 +25,7 @@ MODULE tramle
    USE zdf_oce, ONLY : ln_zdfosm
    USE zdfosm, ONLY  : ln_osm_mle, hmle, omle_dbdx, omle_dbdy, mld_prof
    !
-   USE extcom
-   USE extfld
+   USE pyfld
 
    IMPLICIT NONE
    PRIVATE
@@ -254,7 +253,7 @@ CONTAINS
          !
          !                     !==  External computation of MLE ==!
          CALL lbc_lnk( 'tramle', zum, 'U', 1.0_wp , zvm, 'V', 1.0_wp )
-         CALL ext_comm( kt , 0, 0, 0, zmld, zbm, zum, zvm )
+         CALL ext_mle( kt , zmld, zbm, zum, zvm )
 
          ! Filtering data
          CALL lap_par_flt( ext_psiu, ext_psiuf )
