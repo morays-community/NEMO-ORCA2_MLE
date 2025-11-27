@@ -1,23 +1,18 @@
-MODULE extcom
+MODULE pyfld
    !!======================================================================
-   !!                       ***  MODULE  extcom  ***
-   !! Demo external comm module: manage connexion with external codes 
+   !!                       ***  MODULE  pyfld  ***
+   !! Demo inference MLE module: manage connexion with external codes for MLE
    !!======================================================================
    !! History :  5.0.0  ! 2024-07  (A. Barge)  Original code
    !!----------------------------------------------------------------------
 
    !!----------------------------------------------------------------------
-   !!   naminf          : machine learning models formulation namelist
-   !!   extcom_init : initialization of Machine Learning based models
-   !!   ext_comm        : ML based models
-   !!   inf_snd         : send data to external trained model
-   !!   inf_rcv         : receive data from external trained model
+   !!   ext_mle :  compute NLE from external ML-based model
    !!----------------------------------------------------------------------
    USE oce             ! ocean fields
    USE dom_oce         ! ocean domain fields
    USE sbc_oce         ! ocean surface fields
-   USE extfld          ! working fields for external models
-   USE cpl_oasis3      ! OASIS3 coupling
+   USE pycpl          ! working fields for external models
    USE timing
    USE iom
    USE in_out_manager
@@ -25,38 +20,19 @@ MODULE extcom
    USE lbclnk
 
    IMPLICIT NONE
-   PRIVATE
+   PUBLIC
 
-   PUBLIC extcom_alloc          ! function called in extcom_init 
-   PUBLIC extcom_dealloc        ! function called in extcom_final
-   PUBLIC extcom_init        ! routine called in nemogcm.F90
-   PUBLIC ext_comm           ! routine called in stpmlf.F90
-   PUBLIC extcom_final       ! routine called in nemogcm.F90
+   !!----------------------------------------------------------------------
+   !!                    2D Python coupling Module fields
+   !!----------------------------------------------------------------------
+   REAL(wp), PUBLIC, ALLOCATABLE, SAVE, DIMENSION(:,:)  :: ext_psiu, ext_psiv   !: external-computed MLE streamfunction
+   REAL(wp), PUBLIC, ALLOCATABLE, SAVE, DIMENSION(:,:)  :: ext_wb               !: external-computed vertical buoyancy fluxes
 
-   INTEGER, PARAMETER ::   jps_tmask = 1   ! t-grid mask
-   INTEGER, PARAMETER ::   jps_gradb = 2   ! depth-averaged buoyancy gradient magnitude on t-grid
-   INTEGER, PARAMETER ::   jps_fcor = 3    ! Coriolis parameter
-   INTEGER, PARAMETER ::   jps_hml = 4     ! mixed-layer-depth on t-grid
-   INTEGER, PARAMETER ::   jps_tau = 5     ! surface wind stress magnitude on t-grid
-   INTEGER, PARAMETER ::   jps_q = 6       ! surface heat flux
-   INTEGER, PARAMETER ::   jps_div = 7     ! depth-averaged horizontal divergence
-   INTEGER, PARAMETER ::   jps_vort = 8    ! depth-averaged vertical vorticity
-   INTEGER, PARAMETER ::   jps_strain = 9  ! depth-averaged strain magnitude
-   INTEGER, PARAMETER ::   jps_ext = 9  ! total number of sendings
+   !!----------------------------------------------------------------------
+   !!                    3D Python coupling Module fields
+   !!----------------------------------------------------------------------
 
-   INTEGER, PARAMETER ::   jpr_wb  = 1    ! depth-averaged subgrid vertical buoyancy flux on t-grid
-   INTEGER, PARAMETER ::   jpr_ext = 1    ! total number of receptions
-
-   INTEGER, PARAMETER ::   jpext = MAX(jps_ext,jpr_ext) ! Maximum number of exchanges
-
-   TYPE( DYNARR ), SAVE, DIMENSION(jpext) ::  extsnd, extrcv  ! sent/received fields
-
-   !!-------------------------------------------------------------------------
-   !!                    Namelist for the Inference Models
-   !!-------------------------------------------------------------------------
-   LOGICAL , PUBLIC ::   ln_ext    !: activate module for inference models
-   !!-------------------------------------------------------------------------
-
+   !!----------------------------------------------------------------------
    !! Substitution
 #  include "do_loop_substitute.h90"
    !!----------------------------------------------------------------------
@@ -65,121 +41,47 @@ MODULE extcom
    !!----------------------------------------------------------------------
 CONTAINS
 
-   INTEGER FUNCTION extcom_alloc()
+   SUBROUTINE init_python_fields()
       !!----------------------------------------------------------------------
-      !!             ***  FUNCTION extcom_alloc  ***
-      !!----------------------------------------------------------------------
-      INTEGER :: ierr
-      INTEGER :: jn
-      !!----------------------------------------------------------------------
-      ierr = 0
-      !
-      DO jn = 1, jpr_ext
-         IF( srcv(nmodext)%fld(jn)%laction ) ALLOCATE( extrcv(jn)%z3(jpi,jpj,srcv(nmodext)%fld(jn)%nlvl), STAT=ierr )
-         extcom_alloc = MAX(ierr,0)
-      END DO     
-      DO jn = 1, jps_ext
-         IF( ssnd(nmodext)%fld(jn)%laction ) ALLOCATE( extsnd(jn)%z3(jpi,jpj,ssnd(nmodext)%fld(jn)%nlvl), STAT=ierr )
-         extcom_alloc = MAX(ierr,0)
-      END DO     
-      !
-   END FUNCTION extcom_alloc
-
-   
-   INTEGER FUNCTION extcom_dealloc()
-      !!----------------------------------------------------------------------
-      !!             ***  FUNCTION extcom_dealloc  ***
-      !!----------------------------------------------------------------------
-      INTEGER :: ierr
-      INTEGER :: jn
-      !!----------------------------------------------------------------------
-      ierr = 0
-      !
-      DO jn = 1, jpr_ext
-         IF( srcv(nmodext)%fld(jn)%laction ) DEALLOCATE( extrcv(jn)%z3, STAT=ierr )
-         extcom_dealloc = MAX(ierr,0)
-      END DO
-      DO jn = 1, jps_ext
-         IF( ssnd(nmodext)%fld(jn)%laction ) DEALLOCATE( extsnd(jn)%z3, STAT=ierr )
-         extcom_dealloc = MAX(ierr,0)
-      END DO
-      !
-   END FUNCTION extcom_dealloc
-
-
-   SUBROUTINE extcom_init 
-      !!----------------------------------------------------------------------
-      !!             ***  ROUTINE extcom_init  ***
+      !!             ***  ROUTINE init_python_fields  ***
       !!
-      !! ** Purpose :   Initialisation of the models that rely on external models
+      !! ** Purpose :   Initialisation of the Python module
       !!
-      !! ** Method  :   * Read naminf namelist
-      !!                * create data for models
+      !! ** Method  :   * Allocate arrays for Python fields
+      !!                * Configure Python coupling
       !!----------------------------------------------------------------------
       !
-      INTEGER ::   ios   ! Local Integer
+      ! Allocate fields
+      ALLOCATE( ext_wb(jpi,jpj) , ext_psiu(jpi,jpj), ext_psiv(jpi,jpj) )
+      !
+      ! configure coupling
+      CALL init_python_coupling()
+      !
+   END SUBROUTINE init_python_fields
+
+
+   SUBROUTINE finalize_python_fields()
+      !!----------------------------------------------------------------------
+      !!             ***  ROUTINE finalize_python_fields  ***
+      !!
+      !! ** Purpose :   Free memory used by Python module
+      !!
+      !! ** Method  :   * deallocate arrays for Python fields
+      !!                * deallocate Python coupling
       !!----------------------------------------------------------------------
       !
-      ! ================================ !
-      !      Namelist informations       !
-      ! ================================ !
+      ! Free memory
+      DEALLOCATE( ext_psiu, ext_psiv, ext_wb )
       !
-      IF( lwp ) THEN                        ! control print
-         WRITE(numout,*)
-         WRITE(numout,*)'extcom_init : Setting external model'
-         WRITE(numout,*)'~~~~~~~~~~~'
-      END IF
+      ! terminate coupling environment
+      CALL finalize_python_coupling()
       !
-      IF( .NOT. lk_oasis )   CALL ctl_stop( 'extcom_init : External models coupled via OASIS, but key_oasis3 disabled' )
-      !
-      !
-      ! ======================================== !
-      !     Define exchange needs for Models     !
-      ! ======================================== !
-      !
-      ALLOCATE( srcv(nmodext)%fld(jpr_ext) )
-      !
-      ! default definitions of ssnd snd srcv
-      srcv(nmodext)%fld(:)%laction = .TRUE.  ;  srcv(nmodext)%fld(:)%clgrid = 'T'  ;  srcv(nmodext)%fld(:)%nsgn = 1.
-      srcv(nmodext)%fld(:)%nct = 1  ;  srcv(nmodext)%fld(:)%nlvl = 1
-      !
-      ALLOCATE( ssnd(nmodext)%fld(jps_ext) )
-      !
-      ssnd(nmodext)%fld(:)%laction = .TRUE.  ;  ssnd(nmodext)%fld(:)%clgrid = 'T'  ;  ssnd(nmodext)%fld(:)%nsgn = 1.
-      ssnd(nmodext)%fld(:)%nct = 1  ;  ssnd(nmodext)%fld(:)%nlvl = 1
-      
-      ! -------------------------------- !
-      !          MLE-Fluxes-CNN          !
-      ! -------------------------------- !
-      ! sending gradb, FCOR, HML, TAU, Q, div, vort, strain
-      ssnd(nmodext)%fld(jps_gradb)%clname = 'E_OUT_0'
-      ssnd(nmodext)%fld(jps_fcor)%clname = 'E_OUT_1'
-      ssnd(nmodext)%fld(jps_hml)%clname = 'E_OUT_2'
-      ssnd(nmodext)%fld(jps_tau)%clname = 'E_OUT_3'
-      ssnd(nmodext)%fld(jps_q)%clname = 'E_OUT_4'
-      ssnd(nmodext)%fld(jps_div)%clname = 'E_OUT_5'
-      ssnd(nmodext)%fld(jps_vort)%clname = 'E_OUT_6'
-      ssnd(nmodext)%fld(jps_strain)%clname = 'E_OUT_7'
-      ssnd(nmodext)%fld(jps_tmask)%clname = 'E_OUT_8'
-
-      ! reception of vertical buoyancy fluxes
-      srcv(nmodext)%fld(jpr_wb)%clname = 'E_IN_0'
-      ! ------------------------------ !
-      ! 
-      ! ================================= !
-      !   Define variables for coupling
-      ! ================================= !
-      CALL cpl_var(jpr_ext, jps_ext, 1, nmodext)
-      !
-      IF( extcom_alloc() /= 0 )  CALL ctl_stop( 'STOP', 'extcom_alloc : unable to allocate arrays' )
-      IF( extfld_alloc() /= 0 )  CALL ctl_stop( 'STOP', 'extfld_alloc : unable to allocate arrays' ) 
-      !
-   END SUBROUTINE extcom_init
+   END SUBROUTINE finalize_python_fields
 
 
-   SUBROUTINE ext_comm( kt, Kbb, Kmm, Kaa, hmld, bz, uz, vz )
+   SUBROUTINE ext_mle( kt, hmld, bz, uz, vz )
       !!----------------------------------------------------------------------
-      !!             ***  ROUTINE ext_comm  ***
+      !!             ***  ROUTINE ext_mle  ***
       !!
       !! ** Purpose :   update the ocean data with the coupled models
       !!
@@ -187,74 +89,59 @@ CONTAINS
       !!                * 
       !!----------------------------------------------------------------------
       INTEGER, INTENT(in) ::   kt            ! ocean time step
-      INTEGER, INTENT(in) ::   Kbb, Kmm, Kaa ! ocean time level indices
       REAL(wp), DIMENSION(jpi,jpj), INTENT(in) ::  hmld, bz, uz, vz
       !
       !
-      INTEGER :: isec, info, jn                       ! local integer
       REAL(wp), DIMENSION(jpi,jpj)   ::  zdat, zdatx, zdaty   ! working buffer
       !!----------------------------------------------------------------------
       !
-      IF( ln_timing )   CALL timing_start('ext_comm')
-      !
-      isec = ( kt - nit000 ) * NINT( rn_Dt )       ! Date of exchange 
-      info = OASIS_idle
-      !
-      ! ------  Prepare data to send ------
-      !
-      ! gradB
-      CALL calc_2D_scal_gradient( bz, zdatx, zdaty )
-      extsnd(jps_gradb)%z3(:,:,ssnd(nmodext)%fld(jps_gradb)%nlvl) = SQRT( zdatx(:,:)**2 + zdaty(:,:)**2 )
-      ! FCOR
-      extsnd(jps_fcor)%z3(:,:,ssnd(nmodext)%fld(jps_fcor)%nlvl) = ff_t(:,:)
-      ! HML
-      extsnd(jps_hml)%z3(:,:,ssnd(nmodext)%fld(jps_hml)%nlvl) = hmld(:,:)
-      ! Tau
-      !print*, jps_tau, size(ssnd(nmodext)%fld), size(taum), size(extsnd(jps_tau)%z3)
-      extsnd(jps_tau)%z3(:,:,ssnd(nmodext)%fld(jps_tau)%nlvl) = taum(:,:)
-      ! Heat Flux
-      extsnd(jps_q)%z3(:,:,ssnd(nmodext)%fld(jps_q)%nlvl) = qsr(:,:) + qns(:,:)
-      ! horizontal divergence
-      CALL calc_2D_vec_hdiv( hmld, uz, vz, zdat )
-      extsnd(jps_div)%z3(:,:,ssnd(nmodext)%fld(jps_div)%nlvl) = zdat(:,:)
-      CALL iom_put( 'ext_div_mle', zdat)
-      ! vorticity
-      CALL calc_2D_vec_vort( uz, vz, zdat )
-      extsnd(jps_vort)%z3(:,:,ssnd(nmodext)%fld(jps_vort)%nlvl) = zdat(:,:)
-      CALL iom_put( 'ext_vort_mle', zdat)
-      ! strain
-      CALL calc_2D_strain_magnitude( uz, vz, zdat )
-      extsnd(jps_strain)%z3(:,:,ssnd(nmodext)%fld(jps_strain)%nlvl) = zdat(:,:)
-      CALL iom_put( 'ext_strain_mle', zdat)
-      ! tmask
-      extsnd(jps_tmask)%z3(:,:,1:ssnd(nmodext)%fld(jps_tmask)%nlvl) = tmask(:,:,1:ssnd(nmodext)%fld(jps_tmask)%nlvl)
+      IF( ln_timing )   CALL timing_start('ext_mle')
       !
       ! ========================
       !   Proceed all sendings
       ! ========================
       !
-      DO jn = 1, jps_ext
-         IF ( ssnd(nmodext)%fld(jn)%laction ) THEN
-            CALL cpl_snd( nmodext, jn, isec, extsnd(jn)%z3(A2D(0),:), info)
-         ENDIF
-      END DO
-      !
-      ! .... some external operations ....
+      ! gradB
+      CALL calc_2D_scal_gradient( bz, zdatx, zdaty )
+      CALL send_to_python('grad_B', SQRT(zdatx**2 + zdaty**2) ,kt)
+      CALL iom_put( 'ext_bx_mle', zdatx )
+      CALL iom_put( 'ext_by_mle', zdaty )
+      CALL iom_put( 'ext_grdB_mle', SQRT( zdatx(:,:)**2 + zdaty(:,:)**2 ))
+      
+      ! FCOR - HML - Tau - Heat Fluxes
+      CALL send_to_python('FCOR', ff_t ,kt)
+      CALL send_to_python('HML', hmld ,kt)
+      CALL send_to_python('TAU', taum ,kt)
+      CALL send_to_python('Q', qsr + qns ,kt)
+      CALL iom_put( 'ext_hmld_mle', hmld)
+      CALL iom_put( 'ext_taum_mle', taum)
+      CALL iom_put( 'ext_q_mle', qsr(:,:) + qns(:,:))
+      CALL iom_put( 'ext_f_mle', ff_t)
+
+      ! horizontal divergence
+      CALL calc_2D_vec_hdiv( hmld, uz, vz, zdat )
+      CALL send_to_python('div', zdat ,kt)
+      CALL iom_put( 'ext_div_mle', zdat)
+
+      ! vorticity
+      CALL calc_2D_vec_vort( uz, vz, zdat )
+      CALL send_to_python('vort', zdat ,kt)
+      CALL iom_put( 'ext_vort_mle', zdat)
+
+      ! strain
+      CALL calc_2D_strain_magnitude( uz, vz, zdat )
+      CALL send_to_python('strain', zdat ,kt)
+      CALL iom_put( 'ext_strain_mle', zdat)
+
+      ! tmask
+      CALL send_to_python('tmask', tmask, kt)
+      ! ------------------------------------------------------
       !
       ! ==========================
       !   Proceed all receptions
       ! ==========================
       !
-      DO jn = 1, jpr_ext
-         IF( srcv(nmodext)%fld(jn)%laction ) THEN
-            CALL cpl_rcv( nmodext, jn, isec, extrcv(jn)%z3(A2D(0),:), info)
-         ENDIF
-      END DO
-      !
-      ! ------ Distribute receptions  ------
-      !
-      ! wb
-      ext_wb(:,:) = extrcv(jpr_wb)%z3(:,:,srcv(nmodext)%fld(jpr_wb)%nlvl)
+      CALL receive_from_python('w_b', ext_wb , kt)
       !
       ! get streamfunction on correct grid points
       CALL invert_buoyancy_flux( ext_wb, zdatx, zdaty, bz,  ext_psiu, ext_psiv )
@@ -263,17 +150,10 @@ CONTAINS
       CALL iom_put( 'ext_wb', ext_wb )
       CALL iom_put( 'ext_psiu_mle', ext_psiu )
       CALL iom_put( 'ext_psiv_mle', ext_psiv )
-      CALL iom_put( 'ext_bx_mle', zdatx )
-      CALL iom_put( 'ext_by_mle', zdaty )
-      CALL iom_put( 'ext_grdB_mle', SQRT( zdatx(:,:)**2 + zdaty(:,:)**2 ))
-      CALL iom_put( 'ext_hmld_mle', hmld)
-      CALL iom_put( 'ext_taum_mle', taum)
-      CALL iom_put( 'ext_q_mle', qsr(:,:) + qns(:,:))
-      CALL iom_put( 'ext_f_mle', ff_t)
       !
-      IF( ln_timing )   CALL timing_stop('ext_comm')
+      IF( ln_timing )   CALL timing_stop('ext_mle')
       !
-   END SUBROUTINE ext_comm
+   END SUBROUTINE ext_mle
 
    SUBROUTINE invert_buoyancy_flux( wb, gradbx, gradby, scalar, psiu, psiv )
       !!----------------------------------------------------------------------
@@ -307,7 +187,7 @@ CONTAINS
          wbv(ji,jj) = 0.5*(wb(ji,jj+1) + wb(ji,jj)) * vmask(ji,jj,1)
       END_2D
 
-      CALL lbc_lnk( 'infmod', gradbx, 'T', 1.0_wp , gradby, 'T', 1.0_wp )
+      CALL lbc_lnk( 'pyfld', gradbx, 'T', 1.0_wp , gradby, 'T', 1.0_wp )
       DO_2D( nn_hls, nn_hls-1, nn_hls, nn_hls-1 )
          jwgt = tmask(ji,jj+1,1) + tmask(ji,jj,1)
          IF ( jwgt == 0 ) jwgt = 1
@@ -380,7 +260,7 @@ CONTAINS
       REAL(wp)  :: ztmp1, ztmp2  ! interpolated hgt in u- and v- points
       !!----------------------------------------------------------------------
       !
-      DO_2D( nn_hls-1, nn_hls, nn_hls-1, nn_hls )
+      DO_2D( nn_hls-1, nn_hls-1, nn_hls-1, nn_hls-1 )
          ! i-longitude
          ztmp1 = MIN( hgt(ji+1,jj) , hgt(ji,jj) )
          ztmp2 = MIN( hgt(ji,jj) , hgt(ji-1,jj) )
@@ -442,12 +322,17 @@ CONTAINS
       REAL(wp), DIMENSION(jpi,jpj) :: ztrac, zshear ! working arrays
       !!----------------------------------------------------------------------
       !
-      DO_2D( nn_hls, nn_hls-1, nn_hls, nn_hls-1 )
+      ! Init
+      ztrac = 0.0_wp
+      zshear = 0.0_wp
+      strain = 0.0_wp
+      !
+      DO_2D( nn_hls-1, nn_hls-1, nn_hls-1, nn_hls-1 )
          ! expansion rate
          ztmp =   ( u(ji,jj)*r1_e2u(ji,jj) - u(ji-1,jj)*r1_e2u(ji-1,jj) ) * r1_e1t(ji,jj) * e2t(ji,jj) &
               & - ( v(ji,jj)*r1_e1v(ji,jj) - v(ji,jj-1)*r1_e1v(ji,jj-1) ) * r1_e2t(ji,jj) * e1t(ji,jj)  
          ztrac(ji,jj) = ztmp**2 * tmask(ji,jj,1)
-
+         
          ! shear rate 
          ztmp =   ( u(ji,jj+1)*r1_e1u(ji,jj+1) - u(ji,jj)*r1_e1u(ji,jj) ) * r1_e2f(ji,jj) * e1f(ji,jj) &
               & + ( v(ji+1,jj)*r1_e2v(ji+1,jj) - v(ji,jj)*r1_e2v(ji,jj) ) * r1_e1f(ji,jj) * e2f(ji,jj) 
@@ -455,25 +340,11 @@ CONTAINS
       END_2D
       !
       ! t-grid
-      DO_2D( nn_hls-1, nn_hls-1, nn_hls-1, nn_hls-1 )
+      DO_2D( 0, 0, 0, 0 )
          strain(ji,jj) = 0.25_wp * ( zshear(ji-1,jj) + zshear(ji,jj) + zshear(ji-1,jj-1) + zshear(ji,jj-1) )
-         strain(ji,jj) = SQRT( strain(ji,jj) + ztrac(ji,jj) ) 
+         strain(ji,jj) = SQRT( strain(ji,jj) + ztrac(ji,jj) )
       END_2D
       !
    END SUBROUTINE calc_2D_strain_magnitude
 
-   SUBROUTINE extcom_final
-      !!----------------------------------------------------------------------
-      !!             ***  ROUTINE extcom_final  ***
-      !!
-      !! ** Purpose :   Free memory used for extcom modules
-      !!
-      !! ** Method  :   * Deallocate arrays
-      !!----------------------------------------------------------------------
-      !
-      IF( extcom_dealloc() /= 0 )     CALL ctl_stop( 'STOP', 'extcom_dealloc : unable to free memory' )
-      IF( extfld_dealloc() /= 0 )  CALL ctl_stop( 'STOP', 'extfld_dealloc : unable to free memory' )      
-      !
-   END SUBROUTINE extcom_final 
-   !!=======================================================================
-END MODULE extcom
+END MODULE pyfld

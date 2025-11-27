@@ -9,8 +9,9 @@ import types
 # ============================= #
 # res_string can be one of the following ['1_12','1_8','1_4','1_2','1']
 res_string = '1'
-model_path = '/lustre/fswork/projects/rech/cli/udp79td/local_libs/morays/NEMO-eORCA025_MLE/eORCA025_MLE.BBZ24/INFERENCES/NEMO_MLE/trained_models'
-norm_path = '/lustre/fswork/projects/rech/cli/udp79td/local_libs/morays/NEMO-eORCA025_MLE/eORCA025_MLE.BBZ24/INFERENCES/norms'
+path = '/lustre/fswork/projects/rech/rkm/udp79td/local_libs/morays/NEMO-ORCA2_MLE/ORCA2_MLE.BBZ24/INFERENCES'
+model_path = path + '/BBZ24_MLE/trained_models'
+norm_path = path + '/norms'
 
 # ================================= #
 #  --------- DO NOT MODIFY --------
@@ -93,7 +94,7 @@ def vert_buoyancy_flux_CNN(*inputs, tmask):
         w_b = w_b[ : , : , np.newaxis ]
         w_b = ( w_b * tmask * dev ) + mean
 
-        return w_b 
+        return w_b
 
 
 if __name__ == '__main__' :
