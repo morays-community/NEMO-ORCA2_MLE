@@ -1,6 +1,6 @@
 # ORCA2 MLE
 
-[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.15705446.svg)](https://doi.org/10.5281/zenodo.15705446)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.18244648.svg)](https://doi.org/10.5281/zenodo.18244648)
 
 
 ## Context and Motivation
